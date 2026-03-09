@@ -97,8 +97,8 @@ def calculate_fibonacci_levels(high: float, low: float, trend: str) -> Dict[str,
 
 
 def identify_trend(df: pd.DataFrame) -> Tuple[str, str]:
-    """Identifica a tendência atual"""
-    df = df.copy()
+    """Identifica a tendência atual - ADICIONA as colunas SMA no DataFrame original"""
+    # NÃO usar copy() aqui para manter as colunas no DataFrame original
     df['SMA20'] = df['Close'].rolling(window=20).mean()
     df['SMA50'] = df['Close'].rolling(window=50).mean()
     df['SMA200'] = df['Close'].rolling(window=200).mean()
@@ -284,22 +284,29 @@ if analyze_btn or ticker:
     
     if df is not None and not df.empty:
         
+        # 1. Detectar Pivôs
         df = detect_pivot_points(df, left_bars=left_bars, right_bars=left_bars)
+        
+        # 2. Encontrar últimos pivôs significativos
         high_price, low_price, high_idx, low_idx = find_last_significant_pivots(df)
         
+        # 3. Identificar tendência (ADICIONA as colunas SMA no DataFrame)
         trend_curto, trend_longo = identify_trend(df)
         trend_principal = trend_longo.split()[0]
         
+        # 4. Calcular Fibonacci
         fib_levels = calculate_fibonacci_levels(high_price, low_price, trend_principal)
         
+        # 5. Gerar sinal de trade
         signal = generate_trade_signal(df, fib_levels, trend_principal)
         
+        # 6. Calcular Risk/Reward
         if signal['preco_ideal'] and signal['stop_loss'] and signal['take_profit']:
             rr_ratio = calculate_risk_reward(signal['preco_ideal'], signal['stop_loss'], signal['take_profit'])
         else:
             rr_ratio = 0.0
         
-        # Métricas
+        # ==================== MÉTRICAS ====================
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -314,7 +321,7 @@ if analyze_btn or ticker:
         with col4:
             st.metric("🎯 Sinal", value=signal['acao'], delta=signal['confianca'])
         
-        # Sinal de Trade
+        # ==================== SINAL DE TRADE ====================
         st.subheader("🎯 Sinal de Operação")
         
         if signal['acao'] == 'COMPRA':
@@ -352,7 +359,7 @@ if analyze_btn or ticker:
                 - Resistência: R$ {fib_levels.get('38.2%', 0):.2f}
             """)
         
-        # Níveis de Fibonacci
+        # ==================== NÍVEIS DE FIBONACCI ====================
         st.subheader("📐 Níveis de Fibonacci")
         
         fib_df = pd.DataFrame(list(fib_levels.items()), columns=['Nível', 'Preço'])
@@ -361,18 +368,21 @@ if analyze_btn or ticker:
         
         st.dataframe(fib_df, use_container_width=True, hide_index=True)
         
-        # Gráfico
+        # ==================== GRÁFICO ====================
         st.subheader("📊 Gráfico com Fibonacci e Pivôs")
         
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], subplot_titles=('Preço e Fibonacci', 'Volume'))
         
+        # Candlestick
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Preço', increasing_line_color='#00C853', decreasing_line_color='#FF5252'), row=1, col=1)
         
+        # Linhas de Fibonacci
         colors = ['#FFFFFF', '#90CAF9', '#64B5F6', '#42A5F5', '#FFD54F', '#FF7043', '#FFFFFF', '#00E676', '#00E676']
         
         for i, (nivel, preco) in enumerate(fib_levels.items()):
             fig.add_hline(y=preco, line_dash="dash", line_color=colors[i % len(colors)], line_width=1, annotation_text=nivel, annotation_position="right", annotation_font_size=10, row=1, col=1)
         
+        # Pivôs
         pivot_highs = df[df['PivotHigh'].notna()]
         pivot_lows = df[df['PivotLow'].notna()]
         
@@ -382,14 +392,20 @@ if analyze_btn or ticker:
         if not pivot_lows.empty:
             fig.add_trace(go.Scatter(x=pivot_lows.index, y=pivot_lows['PivotLow'], mode='markers', marker=dict(symbol='triangle-up', size=12, color='green'), name='Swing Low'), row=1, col=1)
         
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color='blue', width=1), name='SMA 50'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA200'], line=dict(color='purple', width=1), name='SMA 200'), row=1, col=1)
+        # Médias Móveis (AGORA AS COLUNAS EXISTEM!)
+        if 'SMA20' in df.columns:
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], line=dict(color='orange', width=1), name='SMA 20'), row=1, col=1)
+        if 'SMA50' in df.columns:
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color='blue', width=1), name='SMA 50'), row=1, col=1)
+        if 'SMA200' in df.columns:
+            fig.add_trace(go.Scatter(x=df.index, y=df['SMA200'], line=dict(color='purple', width=1), name='SMA 200'), row=1, col=1)
         
+        # Volume
         colors_volume = ['#00C853' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#FF5252' for i in range(len(df))]
         
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], marker_color=colors_volume, name='Volume', opacity=0.5), row=2, col=1)
         
+        # Layout
         fig.update_layout(height=800, xaxis_rangeslider_visible=False, showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), template="plotly_dark", hovermode='x unified')
         
         fig.update_xaxes(title_text="Data", row=2, col=1)
@@ -398,7 +414,7 @@ if analyze_btn or ticker:
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # Checklist
+        # ==================== CHECKLIST ====================
         st.subheader("✅ Checklist Operacional")
         
         checklist = {
